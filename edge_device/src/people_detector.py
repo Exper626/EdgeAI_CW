@@ -22,8 +22,6 @@ import asyncio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SpeechDetector")
 
-app = FastAPI()
-
 class SpeechDetector:
     """
     A class for detecting people in video streams using YOLOv8.
@@ -66,8 +64,9 @@ class SpeechDetector:
         self.prediction_thread = None
 
         # FastAPI endpoint
-        self.api_url = os.getenv("FASTAPI_URL", "http://localhost:8000/predict") # Changes according to the deployment(Ours Google CLoud)
-        logger.info(f"Using API URL: {self.api_url}")
+        self.api_url = "https://fastapi-app-952797443635.us-central1.run.app/predict" # chenge it according to yours
+        self.capture_url = "https://fastapi-app-952797443635.us-central1.run.app/capture"
+        logger.info(f"Using API URL: {self.api_url}, Capture URL: {self.capture_url}")
         self.last_prediction_sent = 0
         self.prediction_interval = 1.0
 
@@ -163,6 +162,43 @@ class SpeechDetector:
                     await asyncio.sleep(1)
         logger.error(f"Failed to send prediction after 5 attempts: {prediction}")
 
+    async def send_image(self, image_data):
+        payload = {"image_data": image_data}
+        logger.info(f"Sending image to {self.capture_url}")
+        for attempt in range(5):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.capture_url, json=payload, timeout=5) as response:
+                        response.raise_for_status()
+                        result = await response.json()
+                        logger.info(f"Image sent successfully: {result}")
+                        return
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                logger.warning(f"Attempt {attempt+1} failed: {e}")
+                if attempt < 4:
+                    await asyncio.sleep(1)
+        logger.error(f"Failed to send image after 5 attempts")
+
+    async def poll_capture_request(self):
+        async with aiohttp.ClientSession() as session:
+            while self.running:
+                try:
+                    async with session.get("https://fastapi-app-952797443635.us-central1.run.app/capture_request", timeout=5) as response:
+                        response.raise_for_status()
+                        result = await response.json()
+                        if result.get("capture", False):
+                            logger.info("Capture request received")
+                            await self.trigger_capture()
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    logger.warning(f"Capture poll failed: {e}")
+                await asyncio.sleep(1)
+
+    async def trigger_capture(self):
+        image_data = self.capture_image()
+        if image_data:
+            await self.send_image(image_data)
+
+
     async def prediction_loop(self):
         async with aiohttp.ClientSession() as session:
             try:
@@ -212,10 +248,6 @@ class SpeechDetector:
 
         finally:
             self.recording = False
-
-
-
-
 
 
     def register_multi_person_callback(self, callback):
@@ -290,7 +322,7 @@ class SpeechDetector:
         return  person_count,annotated_frame, fps
 
 
-    def capture_image(self, output_path=None):
+    def capture_image(self):
         """
         Capture the current frame and save it as an image.
 
@@ -302,17 +334,15 @@ class SpeechDetector:
         """
         if self.current_frame is None:
             logger.error("No frame available to capture")
-            return False
+            return None
         try:
-            if output_path is None:
-                timestamp = int(time.time())
-                output_path = os.path.join(self.image_dir, f"capture_{timestamp}.jpg")
-            cv2.imwrite(output_path, self.current_frame)
-            logger.info(f"Image captured and saved to {output_path}")
-            return output_path
+            _, buffer = cv2.imencode('.jpg', self.current_frame)
+            image_data = base64.b64encode(buffer).decode('utf-8')
+            logger.info("Image captured and encoded")
+            return image_data
         except Exception as e:
-            logger.error(f"Error saving image: {e}")
-            return False
+            logger.error(f"Error capturing image: {e}")
+            return None
 
 
     def start(self, camera_id=0):
@@ -342,6 +372,10 @@ class SpeechDetector:
         self.prediction_thread.daemon = True
         self.prediction_thread.start()
 
+        self.capture_poll_thread = threading.Thread(target=lambda: asyncio.run(self.poll_capture_request()))
+        self.capture_poll_thread.daemon = True
+        self.capture_poll_thread.start()
+
         logger.info("Starting speech detection. Press 's' to stop, 'c' to capture image.")
         self.running = True
 
@@ -361,7 +395,7 @@ class SpeechDetector:
                         self.running = False
                         break
                     elif key == ord('c'):
-                        self.capture_image()
+                        asyncio.run(self.trigger_capture())
         except Exception as e:
             logger.error(f"Error during detection: {e}")
         finally:
@@ -380,37 +414,13 @@ class SpeechDetector:
             self.inference_thread.join(timeout=1)
         if self.prediction_thread and self.prediction_thread.is_alive():
             self.prediction_thread.join(timeout=1)
+        if self.capture_poll_thread and self.capture_poll_thread.is_alive():
+            self.capture_poll_thread.join(timeout=1)
         logger.info("Detection stopped successfully.")
-
-
-# FastAPI endpoints for capture
-detector = None
-
-@app.post("/capture")
-async def capture_image_endpoint():
-    global detector
-    if detector is None or not detector.running:
-        raise HTTPException(status_code=400, detail="Detector is not running")
-    image_path = detector.capture_image()
-    if image_path is None:
-        raise HTTPException(status_code=500, detail="Failed to capture image")
-    return {"image_path": image_path}
-
-@app.get("/image/{filename}")
-async def get_image(filename: str):
-    image_path = os.path.join(detector.image_dir, filename)
-    if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(image_path)
-
-def run_fastapi():
-    uvicorn.run(app, host="0.0.0.0", port=8001)
 
 # Example usage:
 if __name__ == "__main__":
 
     # Create detector instance
     detector = SpeechDetector()
-    fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
-    fastapi_thread.start()
     detector.start()
