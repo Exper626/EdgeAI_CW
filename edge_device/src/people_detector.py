@@ -137,23 +137,32 @@ class SpeechDetector:
     def audio_callback(self, indata, frames, time, status):
         """Callback for sounddevice stream."""
 
+        if status:
+            logger.error(f"Stream status: {status}")
         self.audio_queue.put(indata.copy())
 
 
-    def send_prediction(self):
+    async def send_prediction(self):
         """Send noise_level, person_count, and timestamp to FastAPI /predict."""
         prediction = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "noise_level": self.current_noise_level,
             "person_count": self.current_count
         }
+        logger.info(f"Sending prediction to {self.api_url}: {prediction}")
+        for attempt in range(5):
+            try:
+                async with session.post(self.api_url, json=prediction, timeout=5) as response:
+                    response = requests.post(self.api_url, json=prediction)
+                    response.raise_for_status()
+                    logger.info(f"Prediction sent successfully: {result}")
+                    return
 
-        try:
-            response = requests.post(self.api_url, json=prediction)
-            response.raise_for_status()
-
-        except:
-            pass
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                if attempt < 4:
+                    await asyncio.sleep(1)
+        logger.error(f"Failed to send prediction after 5 attempts: {prediction}")
 
 
 
