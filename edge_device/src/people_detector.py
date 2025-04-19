@@ -316,7 +316,7 @@ class SpeechDetector:
             return False
 
 
-    def start_camera(self, camera_id=0):
+    def start(self, camera_id=0):
         """
         Start detection with a camera feed.
         
@@ -326,17 +326,24 @@ class SpeechDetector:
         self.cap = cv2.VideoCapture(camera_id)
         
         if not self.cap.isOpened():
-            print(f"Error: Could not open camera {camera_id}")
+            logger.error(f"Could not open camera {camera_id}")
             return
-        
-        print("Starting person detection. Press 's' to stop cleanly.")
+
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
+
         # Start audio inference
         self.recording = True
         self.inference_thread = threading.Thread(target=self.inference_loop)
         self.inference_thread.daemon = True
         self.inference_thread.start()
 
+        self.prediction_thread = threading.Thread(target=self.start_prediction_loop)
+        self.prediction_thread.daemon = True
+        self.prediction_thread.start()
 
+        logger.info("Starting speech detection. Press 's' to stop, 'c' to capture image.")
         self.running = True
         
         try:
@@ -344,19 +351,20 @@ class SpeechDetector:
                 while self.running:
                     ret, frame = self.cap.read()
                     if not ret:
-
+                        logger.error("Failed to capture frame")
                         break
-                    person_count, annotated_frame = self.process_frame(frame)
+                    person_count, annotated_frame, fps = self.process_frame(frame)
                     cv2.imshow("Speech Detection", annotated_frame)
-                    self.send_prediction()  # Send prediction after processing frame
+
                     key = cv2.waitKey(1) & 0xFF
                     if key == ord('s'):
-
+                        logger.info("Stopping detection gracefully...")
                         self.running = False
                         break
                     elif key == ord('c'):
                         self.capture_image()
-
+        except Exception as e:
+            logger.error(f"Error during detection: {e}")
         finally:
             self.stop()
     
@@ -371,7 +379,9 @@ class SpeechDetector:
         cv2.destroyAllWindows()
         if self.inference_thread and self.inference_thread.is_alive():
             self.inference_thread.join(timeout=1)
-        print("Stop signal received. Detection will stop after current frame.")
+        if self.prediction_thread and self.prediction_thread.is_alive():
+            self.prediction_thread.join(timeout=1)
+        logger.info("Detection stopped successfully.")
 
 
 # Example usage:
