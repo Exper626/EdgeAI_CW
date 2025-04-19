@@ -141,7 +141,7 @@ class SpeechDetector:
         self.audio_queue.put(indata.copy())
 
 
-    async def send_prediction(self):
+    async def send_prediction(self, session):
         """Send noise_level, person_count, and timestamp to FastAPI /predict."""
         prediction = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
