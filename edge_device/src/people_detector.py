@@ -66,7 +66,7 @@ class SpeechDetector:
         self.prediction_thread = None
 
         # FastAPI endpoint
-        self.api_url = os.getenv("FASTAPI_URL", "http://localhost:8000/predict")
+        self.api_url = os.getenv("FASTAPI_URL", "http://localhost:8000/predict") # will be replaced with our cloud URL
         logger.info(f"Using API URL: {self.api_url}")
         self.last_prediction_sent = 0
         self.prediction_interval = 1.0
@@ -74,8 +74,6 @@ class SpeechDetector:
         # Directory for captured images
         self.image_dir = "captured_images"
         os.makedirs(self.image_dir, exist_ok=True)
-
-
 
     def load_wav_16k_mono(self, filename):
         """Load a WAV file, convert to float tensor, resample to 16 kHz single-channel."""
@@ -101,13 +99,17 @@ class SpeechDetector:
         temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
         temp_filename = temp_file.name
         temp_file.close()
-        with wave.open(temp_filename, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
-            audio_int16 = (audio_data * 32767).astype(np.int16)
-            wf.writeframes(audio_int16.tobytes())
-        return temp_filename
+        try:
+            with wave.open(temp_filename, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                audio_int16 = (audio_data * 32767).astype(np.int16)
+                wf.writeframes(audio_int16.tobytes())
+            return temp_filename
+        except Exception as e:
+            logger.error(f"Error saving audio chunk: {e}")
+            raise
 
     def predict_sound_class(self, audio_data):
         """Predict sound class from audio data."""
