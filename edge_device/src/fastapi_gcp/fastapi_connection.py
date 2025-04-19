@@ -7,10 +7,12 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("API2_for_audio")
 
-db = firestore.Client(project="cloudsqltest-457110") #changes according to our projectName
+db = firestore.Client(project="cloudsqltest-457110")
 
 app = FastAPI()
 
+latest_image = None
+capture_requested = False
 
 class Prediction(BaseModel):
     timestamp: str
@@ -23,12 +25,13 @@ class Prediction(BaseModel):
             raise ValueError("noise_level must be 'High' or 'Normal'")
         return v
 
+class ImageCapture(BaseModel):
+    image_data: str
 
 predictions = []
 consecutive_high_count = 0
 CONSECUTIVE_THRESHOLD = 4
 MAX_PREDICTIONS = 100
-
 
 @app.post("/predict")
 async def save_prediction(prediction: Prediction):
@@ -46,7 +49,6 @@ async def save_prediction(prediction: Prediction):
         consecutive_high_count = 0
     logger.info(f"Consecutive High count: {consecutive_high_count}, Total predictions: {len(predictions)}")
 
-    # Save to Firestore only if human speech detected and person_count >= 2
     if consecutive_high_count >= CONSECUTIVE_THRESHOLD and pred_dict["person_count"] >= 2:
         try:
             doc_ref = db.collection("predictions").add(pred_dict)
@@ -56,7 +58,6 @@ async def save_prediction(prediction: Prediction):
             raise HTTPException(status_code=500, detail=f"Firestore save error: {str(e)}")
 
     return {"status": "Prediction received"}
-
 
 @app.get("/live")
 async def get_live():
@@ -73,10 +74,44 @@ async def get_live():
     logger.info(f"Serving live prediction: {response}")
     return response
 
+@app.post("/capture")
+async def capture_image(capture: ImageCapture):
+    global latest_image
+    try:
+        latest_image = capture.image_data
+        logger.info("Image received and stored in memory")
+        return {"status": "Image received"}
+    except Exception as e:
+        logger.error(f"Error storing image: {e}")
+        raise HTTPException(status_code=500, detail=f"Error storing image: {str(e)}")
+
+@app.get("/image")
+async def get_image():
+    global latest_image
+    if latest_image is None:
+        logger.info("No image available")
+        raise HTTPException(status_code=404, detail="No image available")
+    logger.info("Serving latest image")
+    return {"image_data": latest_image}
+
+@app.post("/capture_request")
+async def request_capture():
+    global capture_requested
+    capture_requested = True
+    logger.info("Capture requested")
+    return {"status": "Capture requested"}
+
+@app.get("/capture_request")
+async def get_capture_request():
+    global capture_requested
+    if capture_requested:
+        capture_requested = False
+        logger.info("Capture request served")
+        return {"capture": True}
+    return {"capture": False}
 
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.getenv("PORT", 8080))
     logger.info(f"Starting FastAPI on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

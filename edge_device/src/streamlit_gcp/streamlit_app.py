@@ -1,24 +1,22 @@
 import streamlit as st
 import requests
-import time
 import logging
 from datetime import datetime
-import pytz
 from google.cloud import firestore
 import pandas as pd
 from PIL import Image
 import io
-import os
+import base64
+from streamlit_autorefresh import st_autorefresh
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("StreamlitApp")
 
-API_URL = "http://localhost:8000/live" # Changes according to the deployment(Ours Google CLoud)
-CAPTURE_URL = "http://localhost:8001/capture"
-IMAGE_URL = "http://localhost:8001/image/"
+API_URL = "https://fastapi-app-952797443635.us-central1.run.app/live"
+CAPTURE_URL = "https://fastapi-app-952797443635.us-central1.run.app/capture_request"
+IMAGE_URL = "https://fastapi-app-952797443635.us-central1.run.app/image"
 
-# Initialize Firestore
-db = firestore.Client(project="cloudsqltest-457110") #changes according to our projectName
+db = firestore.Client(project="cloudsqltest-457110")
 
 st.markdown("""
     <style>
@@ -92,27 +90,37 @@ def fetch_prediction():
         st.error(f"Error fetching prediction: {e}")
         return {}
 
-def capture_image():
+def trigger_capture():
     try:
         response = requests.post(CAPTURE_URL, timeout=5)
         response.raise_for_status()
         result = response.json()
-        logger.info(f"Capture response: {result}")
-        return result.get("image_path")
+        logger.info(f"Capture trigger response: {result}")
+        return True
     except requests.RequestException as e:
-        logger.error(f"Error capturing image: {e}")
-        st.error(f"Error capturing image: {e}")
-        return None
+        logger.error(f"Error triggering capture: {e}")
+        st.error(f"Error triggering capture: {e}")
+        return False
 
-def fetch_image(image_path):
-    filename = os.path.basename(image_path)
+def fetch_image():
     try:
-        response = requests.get(IMAGE_URL + filename, timeout=5)
+        response = requests.get(IMAGE_URL, timeout=5)
         response.raise_for_status()
-        return Image.open(io.BytesIO(response.content))
+        result = response.json()
+        logger.info(f"Image fetch response: {result}")
+        return result.get("image_data")
     except requests.RequestException as e:
         logger.error(f"Error fetching image: {e}")
         st.error(f"Error fetching image: {e}")
+        return None
+
+def decode_image(base64_string):
+    try:
+        image_data = base64.b64decode(base64_string)
+        return Image.open(io.BytesIO(image_data)).convert("RGB")
+    except Exception as e:
+        logger.error(f"Error decoding image: {e}")
+        st.error(f"Error decoding image: {e}")
         return None
 
 def fetch_history():
@@ -121,8 +129,6 @@ def fetch_history():
         history = []
         for doc in docs:
             data = doc.to_dict()
-            # Only include predictions that would have human speech detected
-            # Since Firestore only saves when consecutive_high_count >= 4 and person_count >= 2
             data["status"] = "Human speech detected"
             history.append(data)
         return history
@@ -138,11 +144,11 @@ def format_timestamp(iso_timestamp):
     except:
         return iso_timestamp
 
-# Session state for captured image
-if "image_path" not in st.session_state:
-    st.session_state.image_path = None
+st_autorefresh(interval=5000, key="refresh")
 
-# Live Detection Section
+if "captured_image" not in st.session_state:
+    st.session_state.captured_image = None
+
 with st.container():
     st.markdown('<div class="live-prediction">', unsafe_allow_html=True)
     st.write("Live Detection:")
@@ -160,23 +166,21 @@ with st.container():
     else:
         placeholder.markdown('<div class="loading">Waiting for predictions...</div>', unsafe_allow_html=True)
 
-    # Capture Button
     if st.button("Capture Image", key="capture_button", help="Capture a photo from the camera"):
-        image_path = capture_image()
-        if image_path:
-            st.session_state.image_path = image_path
-            logger.info(f"Image captured: {image_path}")
+        if trigger_capture():
+            image_data = fetch_image()
+            if image_data:
+                image = decode_image(image_data)
+                if image:
+                    st.session_state.captured_image = image
+                    logger.info("Image captured and stored in session state")
 
-    # Display Captured Image
-    if st.session_state.image_path:
-        image = fetch_image(st.session_state.image_path)
-        if image:
-            st.image(image, caption="Captured Image", use_column_width=True, output_format="JPEG", channels="BGR")
-            st.markdown('<div class="captured-image"></div>', unsafe_allow_html=True)
+    if st.session_state.captured_image:
+        st.image(st.session_state.captured_image, caption="Captured Image", use_column_width=True)
+        st.markdown('<div class="captured-image"></div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# History Table
 with st.container():
     st.markdown('<div class="history-table">', unsafe_allow_html=True)
     st.subheader("Prediction History (Human Speech Detected)")
@@ -190,6 +194,3 @@ with st.container():
     else:
         st.write("No predictions with human speech detected yet.")
     st.markdown('</div>', unsafe_allow_html=True)
-
-time.sleep(5)
-st.rerun()
