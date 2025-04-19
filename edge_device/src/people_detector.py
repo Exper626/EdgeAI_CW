@@ -202,12 +202,14 @@ class SpeechDetector:
                         chunk_to_process = audio_buffer[-self.CHUNK_SIZE:]
                         prediction_label = self.predict_sound_class(chunk_to_process)
                         self.current_noise_level = self.noise_class(prediction_label)
-                        overlap_samples = int(self.SAMPLE_RATE * 2.0)
+                        overlap_samples = int(self.SAMPLE_RATE * 1.0)
                         if len(audio_buffer) > overlap_samples:
                             audio_buffer = audio_buffer[-overlap_samples:]
                         last_prediction_time = current_time
                 except queue.Empty:
                     continue
+        except KeyboardInterrupt:
+            logger.info("Stopping audio inference loop")
 
         finally:
             self.recording = False
@@ -247,9 +249,10 @@ class SpeechDetector:
         Returns:
             Annotated frame with detection boxes and person count
         """
+        start_time = time.time()
         self.current_frame = frame.copy()
-
-        results = self.model(frame)
+        resized_frame = cv2.resize(frame, (640, 480))
+        results = self.model(resized_frame)
         
         # Get the detections
         result = results[0]
@@ -258,6 +261,9 @@ class SpeechDetector:
         person_count = 0
         
         annotated_frame = frame.copy()
+
+        orig_height, orig_width = frame.shape[:2]
+        scale_x, scale_y = orig_width / 640, orig_height / 480
         
         for box in result.boxes:
             # Check if detection is a person and confidence is above threshold
@@ -266,21 +272,23 @@ class SpeechDetector:
                 
                 # Get the bounding box coordinates
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                
+                x1, y1, x2, y2 = int(x1 * scale_x), int(y1 * scale_y), int(x2 * scale_x), int(y2 * scale_y)
+
                 # Draw rectangle around person
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         
         # Display the count on the frame
         cv2.putText(annotated_frame, f"People count: {person_count}",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         cv2.putText(annotated_frame, f"Noise level: {self.current_noise_level}",
                     (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+        fps = 1 / (time.time() - start_time) if time.time() > start_time else 0
         cv2.putText(annotated_frame, "Press 's' to stop, 'c' to capture",
                     (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
         self.current_count = person_count
         
-        return  person_count,annotated_frame
+        return  person_count,annotated_frame, fps
 
 
     def capture_image(self, output_path="captured_image.jpg"):
