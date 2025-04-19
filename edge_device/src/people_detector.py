@@ -30,11 +30,11 @@ class SpeechDetector:
     Triggers events when 2 or more people are detected.
     Press 's' to stop the detection cleanly.
     """
-    
+
     def __init__(self, video_model_path='edge_device/models/yolov8n.pt', audio_model_path='../models/audio_classifier_test.h5', confidence=0.5):
         """
         Initialize the person detector.
-        
+
         Args:
             model_path: Path to YOLOv8 model file (.pt)
             confidence: Confidence threshold for detections
@@ -153,7 +153,7 @@ class SpeechDetector:
         for attempt in range(5):
             try:
                 async with session.post(self.api_url, json=prediction, timeout=5) as response:
-                    response = requests.post(self.api_url, json=prediction)
+                    
                     response.raise_for_status()
                     logger.info(f"Prediction sent successfully: {result}")
                     return
@@ -223,29 +223,29 @@ class SpeechDetector:
         """
         Register a callback function to be called when 2+ people are detected.
         The callback will receive the number of people detected as an argument.
-        
+
         Args:
             callback: Function to call when multiple people are detected
         """
         self.callbacks.append(callback)
-        
+
     def _notify_callbacks(self, count):
         """
         Notify all registered callbacks about person count.
-        
+
         Args:
             count: Number of people detected
         """
         for callback in self.callbacks:
             callback(count)
-    
+
     def process_frame(self, frame):
         """
         Process a single frame and detect people.
-        
+
         Args:
             frame: The image frame to process
-            
+
         Returns:
             Annotated frame with detection boxes and person count
         """
@@ -253,30 +253,30 @@ class SpeechDetector:
         self.current_frame = frame.copy()
         resized_frame = cv2.resize(frame, (640, 480))
         results = self.model(resized_frame)
-        
+
         # Get the detections
         result = results[0]
-        
+
         # Count people (class 0 in COCO dataset)
         person_count = 0
-        
+
         annotated_frame = frame.copy()
 
         orig_height, orig_width = frame.shape[:2]
         scale_x, scale_y = orig_width / 640, orig_height / 480
-        
+
         for box in result.boxes:
             # Check if detection is a person and confidence is above threshold
             if int(box.cls) == self.person_class_id and box.conf >= self.confidence:
                 person_count += 1
-                
+
                 # Get the bounding box coordinates
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 x1, y1, x2, y2 = int(x1 * scale_x), int(y1 * scale_y), int(x2 * scale_x), int(y2 * scale_y)
 
                 # Draw rectangle around person
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        
+
         # Display the count on the frame
         cv2.putText(annotated_frame, f"People count: {person_count}",
                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -287,7 +287,7 @@ class SpeechDetector:
                     (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
         self.current_count = person_count
-        
+
         return  person_count,annotated_frame, fps
 
 
@@ -319,12 +319,12 @@ class SpeechDetector:
     def start(self, camera_id=0):
         """
         Start detection with a camera feed.
-        
+
         Args:
             camera_id: Camera device ID (default: 0 for primary camera)
         """
         self.cap = cv2.VideoCapture(camera_id)
-        
+
         if not self.cap.isOpened():
             logger.error(f"Could not open camera {camera_id}")
             return
@@ -345,7 +345,7 @@ class SpeechDetector:
 
         logger.info("Starting speech detection. Press 's' to stop, 'c' to capture image.")
         self.running = True
-        
+
         try:
             with sd.InputStream(samplerate=self.SAMPLE_RATE, channels=1, dtype='float32', callback=self.audio_callback):
                 while self.running:
@@ -367,7 +367,7 @@ class SpeechDetector:
             logger.error(f"Error during detection: {e}")
         finally:
             self.stop()
-    
+
     def stop(self):
         """
         Stop the detection process externally if needed.
