@@ -13,6 +13,9 @@ import tempfile
 import requests
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("SpeechDetector")
+
 class SpeechDetector:
     """
     A class for detecting people in video streams using YOLOv8.
