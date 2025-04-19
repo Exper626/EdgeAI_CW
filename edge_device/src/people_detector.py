@@ -291,7 +291,7 @@ class SpeechDetector:
         return  person_count,annotated_frame, fps
 
 
-    def capture_image(self, output_path="captured_image.jpg"):
+    def capture_image(self, output_path=None):
         """
         Capture the current frame and save it as an image.
 
@@ -302,17 +302,17 @@ class SpeechDetector:
             Boolean indicating if capture was successful
         """
         if self.current_frame is None:
-
+            logger.error("No frame available to capture")
             return False
         try:
-            base, ext = os.path.splitext(output_path)
-            if os.path.exists(output_path):
-                output_path = f"{base}_{int(time.time())}{ext}"
+            if output_path is None:
+                timestamp = int(time.time())
+                output_path = os.path.join(self.image_dir, f"capture_{timestamp}.jpg")
             cv2.imwrite(output_path, self.current_frame)
-
-            return True
+            logger.info(f"Image captured and saved to {output_path}")
+            return output_path
         except Exception as e:
-
+            logger.error(f"Error saving image: {e}")
             return False
 
 
