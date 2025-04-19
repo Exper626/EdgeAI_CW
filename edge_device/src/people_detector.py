@@ -22,6 +22,8 @@ import asyncio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SpeechDetector")
 
+app = FastAPI()
+
 class SpeechDetector:
     """
     A class for detecting people in video streams using YOLOv8.
@@ -41,8 +43,6 @@ class SpeechDetector:
         self.confidence = confidence
         self.person_class_id = 0  # In COCO dataset, person is class 0
         self.current_count = 0
-        self.callbacks = []
-        self.running = False
         self.current_frame = None
         self.cap = None
 
@@ -53,7 +53,7 @@ class SpeechDetector:
         self.my_classes = ['vacuum_cleaner', 'door_wood_knock', 'footsteps', 'coughing', 'laughing', 'keyboard_typing',
                            'clock_alarm', 'speech']
         self.SAMPLE_RATE = 16000
-        self.CHUNK_DURATION = 5.0
+        self.CHUNK_DURATION = 2.0  # 5 was giving a delay in predictions so changed to 2
         self.CHUNK_SIZE = int(self.SAMPLE_RATE * self.CHUNK_DURATION)
         self.SILENCE_THRESHOLD = 0.0001
         self.audio_queue = queue.Queue()
@@ -63,9 +63,17 @@ class SpeechDetector:
         self.running = False
         self.recording = False
         self.inference_thread = None
+        self.prediction_thread = None
 
         # FastAPI endpoint
-        self.api_url = "http://localhost:8000/predict"  # Update to <FASTAPI_URL>/predict after deployment
+        self.api_url = os.getenv("FASTAPI_URL", "http://localhost:8000/predict")
+        logger.info(f"Using API URL: {self.api_url}")
+        self.last_prediction_sent = 0
+        self.prediction_interval = 1.0
+
+        # Directory for captured images
+        self.image_dir = "captured_images"
+        os.makedirs(self.image_dir, exist_ok=True)
 
 
 
