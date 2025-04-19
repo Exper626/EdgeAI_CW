@@ -18,6 +18,8 @@ from starlette.responses import FileResponse
 import uvicorn
 import aiohttp
 import asyncio
+import base64
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SpeechDetector")
