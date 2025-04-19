@@ -12,6 +12,12 @@ import wave
 import tempfile
 import requests
 from datetime import datetime
+import logging
+from fastapi import FastAPI
+from starlette.responses import FileResponse
+import uvicorn
+import aiohttp
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SpeechDetector")
