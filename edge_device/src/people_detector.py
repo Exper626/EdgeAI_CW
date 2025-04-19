@@ -164,7 +164,25 @@ class SpeechDetector:
                     await asyncio.sleep(1)
         logger.error(f"Failed to send prediction after 5 attempts: {prediction}")
 
+    async def prediction_loop(self):
+        async with aiohttp.ClientSession() as session:
+            try:
+                while self.running:
+                    current_time = time.time()
+                    if current_time - self.last_prediction_sent >= self.prediction_interval:
+                        await self.send_prediction(session)
+                        self.last_prediction_sent = current_time
+                    await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Prediction loop error: {e}")
+            finally:
+                logger.info("Prediction loop stopped")
 
+    def start_prediction_loop(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.prediction_loop())
+        loop.close()
 
     def inference_loop(self):
         """Process audio chunks for speech detection."""
