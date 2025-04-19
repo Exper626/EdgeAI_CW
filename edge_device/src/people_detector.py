@@ -153,7 +153,6 @@ class SpeechDetector:
         for attempt in range(5):
             try:
                 async with session.post(self.api_url, json=prediction, timeout=5) as response:
-                    
                     response.raise_for_status()
                     logger.info(f"Prediction sent successfully: {result}")
                     return
