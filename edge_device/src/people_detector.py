@@ -66,7 +66,7 @@ class SpeechDetector:
         self.prediction_thread = None
 
         # FastAPI endpoint
-        self.api_url = os.getenv("FASTAPI_URL", "http://localhost:8000/predict") # will be replaced with our cloud URL
+        self.api_url = os.getenv("FASTAPI_URL", "http://localhost:8000/predict") # Changes according to the deployment(Ours Google CLoud)
         logger.info(f"Using API URL: {self.api_url}")
         self.last_prediction_sent = 0
         self.prediction_interval = 1.0
