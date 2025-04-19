@@ -384,10 +384,34 @@ class SpeechDetector:
         logger.info("Detection stopped successfully.")
 
 
+# FastAPI endpoints for capture
+detector = None
+
+@app.post("/capture")
+async def capture_image_endpoint():
+    global detector
+    if detector is None or not detector.running:
+        raise HTTPException(status_code=400, detail="Detector is not running")
+    image_path = detector.capture_image()
+    if image_path is None:
+        raise HTTPException(status_code=500, detail="Failed to capture image")
+    return {"image_path": image_path}
+
+@app.get("/image/{filename}")
+async def get_image(filename: str):
+    image_path = os.path.join(detector.image_dir, filename)
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(image_path)
+
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+
 # Example usage:
 if __name__ == "__main__":
 
     # Create detector instance
     detector = SpeechDetector()
-    # Start webcam detection
-    detector.start_camera()
+    fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
+    fastapi_thread.start()
+    detector.start()
