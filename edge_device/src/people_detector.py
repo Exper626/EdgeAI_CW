@@ -188,7 +188,7 @@ class SpeechDetector:
         """Process audio chunks for speech detection."""
         audio_buffer = np.array([], dtype=np.float32)
         last_prediction_time = time.time()
-        prediction_interval = 1.0
+        prediction_interval = 0.5 # 1 changed to 0.5 to get better preditions
 
         try:
             while self.recording:
